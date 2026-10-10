@@ -189,6 +189,16 @@ html, body {
   background: #ffffff;
   display: flex;
   justify-content: center;
+  transition: opacity 0.15s ease-out;
+  position: relative;
+}
+
+.canvas-wrapper.page-hidden {
+  display: none !important;
+}
+
+.canvas-wrapper.page-placeholder {
+  background: color-mix(in srgb, var(--card, #27272a) 90%, white);
 }
 
 canvas {

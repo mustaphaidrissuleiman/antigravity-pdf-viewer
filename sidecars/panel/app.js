@@ -268,6 +268,8 @@ async function displayPdfData(uint8Array, name, path) {
   emptyState.hidden = true;
   docToolbar.hidden = false;
   pagesContainer.hidden = false;
+  clearPageCache();
+  pagesContainer.innerHTML = '';
 
   // Initial fit width
   await fitToWidth();
@@ -277,81 +279,232 @@ async function displayPdfData(uint8Array, name, path) {
 // Rendering View
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Smooth Rendering Engine & Page Caching
+// ---------------------------------------------------------------------------
+
+const pageCache = new Map(); // key: `${pageNum}_${scale}` -> HTMLDivElement
+const renderPromises = new Map(); // key: `${pageNum}_${scale}` -> Promise
+let prefetchTimer = null;
+let continuousObserver = null;
+
+function clearPageCache() {
+  pageCache.clear();
+  renderPromises.clear();
+  clearTimeout(prefetchTimer);
+  if (continuousObserver) {
+    continuousObserver.disconnect();
+    continuousObserver = null;
+  }
+}
+
+async function getOrRenderPageElement(pageNum, scale) {
+  const cacheKey = `${pageNum}_${scale}`;
+  if (pageCache.has(cacheKey)) {
+    return pageCache.get(cacheKey);
+  }
+
+  // Deduplicate in-flight render promises
+  if (renderPromises.has(cacheKey)) {
+    return renderPromises.get(cacheKey);
+  }
+
+  const promise = (async () => {
+    const page = await currentDoc.getPage(pageNum);
+    const pixelRatio = window.devicePixelRatio || 1;
+    const viewport = page.getViewport({ scale });
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'canvas-wrapper';
+    wrapper.id = `page-wrapper-${pageNum}`;
+    wrapper.dataset.pageNum = String(pageNum);
+
+    const canvas = document.createElement('canvas');
+    canvas.id = `page-canvas-${pageNum}`;
+    wrapper.appendChild(canvas);
+
+    canvas.width = Math.floor(viewport.width * pixelRatio);
+    canvas.height = Math.floor(viewport.height * pixelRatio);
+    canvas.style.width = `${Math.floor(viewport.width)}px`;
+    canvas.style.height = `${Math.floor(viewport.height)}px`;
+    wrapper.style.width = `${Math.floor(viewport.width)}px`;
+    wrapper.style.minHeight = `${Math.floor(viewport.height)}px`;
+
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.scale(pixelRatio, pixelRatio);
+
+    await page.render({
+      canvasContext: ctx,
+      viewport: viewport,
+    }).promise;
+
+    pageCache.set(cacheKey, wrapper);
+    renderPromises.delete(cacheKey);
+
+    // Evict distant pages if cache grows too large (keep memory optimal)
+    if (pageCache.size > 12) {
+      for (const [k, el] of pageCache.entries()) {
+        const p = parseInt(k.split('_')[0], 10);
+        if (Math.abs(p - currentPageNum) > 3) {
+          if (el.parentNode) el.remove();
+          pageCache.delete(k);
+        }
+      }
+    }
+
+    return wrapper;
+  })();
+
+  renderPromises.set(cacheKey, promise);
+  return promise;
+}
+
+function prefetchNeighbors(pageNum, scale) {
+  clearTimeout(prefetchTimer);
+  prefetchTimer = setTimeout(() => {
+    if (!currentDoc || isContinuous) return;
+    if (pageNum + 1 <= currentDoc.numPages) {
+      getOrRenderPageElement(pageNum + 1, scale).catch(() => {});
+    }
+    if (pageNum - 1 >= 1) {
+      getOrRenderPageElement(pageNum - 1, scale).catch(() => {});
+    }
+  }, 60);
+}
+
+// ---------------------------------------------------------------------------
+// Rendering View (Single & Continuous Modes)
+// ---------------------------------------------------------------------------
+
 async function renderView() {
   if (!currentDoc || isRendering) return;
   isRendering = true;
-  pagesContainer.innerHTML = '';
 
   try {
     if (isContinuous) {
-      // Continuous vertical scroll mode
-      for (let i = 1; i <= currentDoc.numPages; i++) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'canvas-wrapper';
-        const canvas = document.createElement('canvas');
-        canvas.id = `page-canvas-${i}`;
-        wrapper.appendChild(canvas);
-        pagesContainer.appendChild(wrapper);
-        await renderSinglePage(i, canvas);
-      }
+      await renderContinuousView();
     } else {
-      // Single page mode
-      const wrapper = document.createElement('div');
-      wrapper.className = 'canvas-wrapper';
-      const canvas = document.createElement('canvas');
-      canvas.id = `page-canvas-${currentPageNum}`;
-      wrapper.appendChild(canvas);
-      pagesContainer.appendChild(wrapper);
-      await renderSinglePage(currentPageNum, canvas);
+      await showSinglePage(currentPageNum);
     }
   } finally {
     isRendering = false;
   }
 }
 
-async function renderSinglePage(pageNumber, canvas) {
-  const page = await currentDoc.getPage(pageNumber);
-  const pixelRatio = window.devicePixelRatio || 1;
-  const viewport = page.getViewport({ scale: currentScale });
+async function showSinglePage(pageNum) {
+  const target = Math.max(1, Math.min(pageNum, currentDoc.numPages));
+  currentPageNum = target;
+  pageNumInput.value = target;
 
-  canvas.width = Math.floor(viewport.width * pixelRatio);
-  canvas.height = Math.floor(viewport.height * pixelRatio);
-  canvas.style.width = `${Math.floor(viewport.width)}px`;
-  canvas.style.height = `${Math.floor(viewport.height)}px`;
+  const targetWrapper = await getOrRenderPageElement(target, currentScale);
 
-  const ctx = canvas.getContext('2d');
-  ctx.scale(pixelRatio, pixelRatio);
+  // If container does not contain targetWrapper, append it
+  if (!pagesContainer.contains(targetWrapper)) {
+    pagesContainer.appendChild(targetWrapper);
+  }
 
-  await page.render({
-    canvasContext: ctx,
-    viewport: viewport,
-  }).promise;
+  // Smoothly swap visibility: hide others, show target (Zero flicker!)
+  Array.from(pagesContainer.children).forEach((child) => {
+    if (child === targetWrapper) {
+      child.classList.remove('page-hidden');
+      child.style.opacity = '1';
+    } else {
+      child.classList.add('page-hidden');
+    }
+  });
+
+  // Pre-render adjacent pages in the background
+  prefetchNeighbors(target, currentScale);
+}
+
+async function renderContinuousView() {
+  pagesContainer.innerHTML = '';
+  clearPageCache();
+
+  // Create lightweight placeholders with exact dimensions for all pages
+  const firstPage = await currentDoc.getPage(1);
+  const sampleViewport = firstPage.getViewport({ scale: currentScale });
+  const estimatedWidth = Math.floor(sampleViewport.width);
+  const estimatedHeight = Math.floor(sampleViewport.height);
+
+  const placeholders = [];
+  for (let i = 1; i <= currentDoc.numPages; i++) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'canvas-wrapper page-placeholder';
+    wrapper.id = `page-wrapper-${i}`;
+    wrapper.dataset.pageNum = String(i);
+    wrapper.style.width = `${estimatedWidth}px`;
+    wrapper.style.height = `${estimatedHeight}px`;
+    pagesContainer.appendChild(wrapper);
+    placeholders.push(wrapper);
+  }
+
+  // Set up IntersectionObserver to lazily render visible pages
+  if (continuousObserver) continuousObserver.disconnect();
+  continuousObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      const pageNum = parseInt(entry.target.dataset.pageNum, 10);
+      if (entry.isIntersecting) {
+        // Update current page number as user scrolls
+        currentPageNum = pageNum;
+        pageNumInput.value = pageNum;
+
+        // Render page if not already rendered
+        if (!entry.target.querySelector('canvas')) {
+          getOrRenderPageElement(pageNum, currentScale).then((renderedWrapper) => {
+            if (entry.target.parentNode) {
+              renderedWrapper.classList.remove('page-placeholder');
+              entry.target.parentNode.replaceChild(renderedWrapper, entry.target);
+              continuousObserver.observe(renderedWrapper);
+            }
+          }).catch(() => {});
+        }
+      }
+    });
+  }, {
+    root: document.getElementById('viewerContainer'),
+    rootMargin: '300px 0px',
+    threshold: 0.1,
+  });
+
+  placeholders.forEach((el) => continuousObserver.observe(el));
+
+  // Render initial page immediately
+  await getOrRenderPageElement(1, currentScale).then((rendered) => {
+    if (placeholders[0] && placeholders[0].parentNode) {
+      placeholders[0].parentNode.replaceChild(rendered, placeholders[0]);
+      continuousObserver.observe(rendered);
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Controls (Page, Zoom)
 // ---------------------------------------------------------------------------
 
-function changePage(num) {
+async function changePage(num) {
   if (!currentDoc) return;
   const target = Math.max(1, Math.min(num, currentDoc.numPages));
   if (target === currentPageNum && !isContinuous) return;
 
-  currentPageNum = target;
-  pageNumInput.value = target;
-
   if (isContinuous) {
-    const targetCanvas = document.getElementById(`page-canvas-${target}`);
-    targetCanvas?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const targetElement = document.getElementById(`page-wrapper-${target}`);
+    if (targetElement) {
+      targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      currentPageNum = target;
+      pageNumInput.value = target;
+    }
   } else {
-    renderView();
+    await showSinglePage(target);
   }
 }
 
-function setScale(scale) {
+async function setScale(scale) {
   currentScale = Math.round(scale * 10) / 10;
   zoomLevelText.textContent = `${Math.round(currentScale * 100)}%`;
-  renderView();
+  clearPageCache();
+  pagesContainer.innerHTML = '';
+  await renderView();
 }
 
 async function fitToWidth() {
@@ -360,7 +513,7 @@ async function fitToWidth() {
   const containerWidth = document.getElementById('viewerContainer').clientWidth - 48;
   const baseViewport = page.getViewport({ scale: 1.0 });
   const scale = containerWidth / baseViewport.width;
-  setScale(Math.max(0.4, scale));
+  await setScale(Math.max(0.4, scale));
 }
 
 // ---------------------------------------------------------------------------
