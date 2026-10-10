@@ -16,6 +16,8 @@ const app = new SidecarApp();
 const readLocal = (name) => readFileSync(join(HERE, name), 'utf8');
 
 app.page('/', () => readLocal('index.html'));
+app.page('/open', () => readLocal('index.html'));
+app.page('/viewer', () => readLocal('index.html'));
 app.page('/app.js', () => readLocal('app.js'));
 app.api('/styles.css', () => new Response(readLocal('styles.css'), { contentType: 'text/css' }), 'GET');
 
@@ -97,9 +99,27 @@ app.api('/api/load-pdf', (data) => {
   try {
     if (targetPath.startsWith('file://')) {
       targetPath = fileURLToPath(targetPath);
+    } else {
+      targetPath = decodeURIComponent(targetPath);
     }
+
     if (!existsSync(targetPath)) {
-      return { success: false, error: 'File not found' };
+      // If relative, check against workspace URIs
+      const uris = Array.isArray(data?.workspaceUris) ? data.workspaceUris : [];
+      for (const uri of uris) {
+        try {
+          const base = uri.startsWith('file://') ? fileURLToPath(uri) : decodeURIComponent(uri);
+          const candidate = join(base, targetPath);
+          if (existsSync(candidate)) {
+            targetPath = candidate;
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    if (!existsSync(targetPath)) {
+      return { success: false, error: `File not found: ${targetPath}` };
     }
     const stat = statSync(targetPath);
     if (!stat.isFile()) {

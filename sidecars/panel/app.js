@@ -36,22 +36,45 @@ let isContinuous = false;
 let isRendering = false;
 
 // ---------------------------------------------------------------------------
-// Initialization
+// Initialization & URL Detection
 // ---------------------------------------------------------------------------
+
+async function checkUrlParams() {
+  try {
+    const url = new URL(window.location.href);
+    let fileParam = url.searchParams.get('file') || url.searchParams.get('path');
+    if (!fileParam && window.location.hash) {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#\/?/, ''));
+      fileParam = hashParams.get('file') || hashParams.get('path');
+    }
+    if (fileParam && fileParam !== currentDocPath) {
+      await loadPdfByPath(fileParam, true);
+      return true;
+    }
+  } catch (err) {
+    console.debug('Failed to parse URL params', err);
+  }
+  return false;
+}
 
 async function init() {
   setupEventListeners();
+
+  const loadedFromUrl = await checkUrlParams();
+
   await loadWorkspacePdfs();
 
-  // Try to restore last opened PDF if available
-  try {
-    const res = await window.sidecar?.fetch?.('/api/get-state', { method: 'GET' });
-    const state = await res?.json?.();
-    if (state?.lastOpenedPath) {
-      await loadPdfByPath(state.lastOpenedPath, false);
+  // Try to restore last opened PDF if none was passed via URL
+  if (!loadedFromUrl) {
+    try {
+      const res = await window.sidecar?.fetch?.('/api/get-state', { method: 'GET' });
+      const state = await res?.json?.();
+      if (state?.lastOpenedPath) {
+        await loadPdfByPath(state.lastOpenedPath, false);
+      }
+    } catch (err) {
+      console.debug('Could not load previous state', err);
     }
-  } catch (err) {
-    console.debug('Could not load previous state', err);
   }
 }
 
@@ -149,6 +172,27 @@ function setupEventListeners() {
   if (window.sidecar?.onWorkspaceChange) {
     window.sidecar.onWorkspaceChange((newUris) => loadWorkspacePdfs(newUris));
   }
+
+  // Listen for URL or navigation changes
+  window.addEventListener('popstate', () => checkUrlParams());
+  window.addEventListener('hashchange', () => checkUrlParams());
+
+  // Poll in case the host updates iframe URL without reload
+  let lastCheckedUrl = window.location.href;
+  setInterval(() => {
+    if (window.location.href !== lastCheckedUrl) {
+      lastCheckedUrl = window.location.href;
+      checkUrlParams();
+    }
+  }, 500);
+
+  // Listen for postMessage from Antigravity host
+  window.addEventListener('message', (event) => {
+    const data = event.data;
+    if (data && (data.file || data.path)) {
+      loadPdfByPath(data.file || data.path, true);
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -170,9 +214,10 @@ async function loadFile(file) {
 async function loadPdfByPath(path, notify = true) {
   showLoading(true);
   try {
+    const uris = (await window.sidecar?.getWorkspaceUris?.()) || [];
     const res = await window.sidecar?.fetch?.('/api/load-pdf', {
       method: 'POST',
-      body: JSON.stringify({ path }),
+      body: JSON.stringify({ path, workspaceUris: uris }),
     });
     const data = await res?.json?.();
 
