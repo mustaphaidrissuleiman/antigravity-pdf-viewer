@@ -147,7 +147,7 @@ function setupEventListeners() {
 
   // Listen for workspace folder changes from host
   if (window.sidecar?.onWorkspaceChange) {
-    window.sidecar.onWorkspaceChange(() => loadWorkspacePdfs());
+    window.sidecar.onWorkspaceChange((newUris) => loadWorkspacePdfs(newUris));
   }
 }
 
@@ -322,10 +322,17 @@ async function fitToWidth() {
 // Workspace PDF Discovery
 // ---------------------------------------------------------------------------
 
-async function loadWorkspacePdfs() {
+async function loadWorkspacePdfs(explicitUris) {
   try {
-    const uris = (await window.sidecar?.getWorkspaceUris?.()) || [];
-    if (!uris.length) return;
+    const uris = (Array.isArray(explicitUris) && explicitUris.length > 0)
+      ? explicitUris
+      : (await window.sidecar?.getWorkspaceUris?.()) || [];
+
+    if (!uris.length) {
+      workspaceSelect.hidden = true;
+      workspaceList.hidden = true;
+      return;
+    }
 
     const res = await window.sidecar?.fetch?.('/api/workspace-pdfs', {
       method: 'POST',

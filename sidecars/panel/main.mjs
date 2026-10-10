@@ -68,17 +68,26 @@ app.api('/api/workspace-pdfs', (data) => {
     try {
       if (uri.startsWith('file://')) {
         folderPath = fileURLToPath(uri);
+      } else {
+        folderPath = decodeURIComponent(uri);
       }
     } catch {
       continue;
     }
-    const found = findPdfs(folderPath, 3, 0);
+    const found = findPdfs(folderPath, 5, 0);
     results.push(...found);
   }
 
-  // Sort newest first
-  results.sort((a, b) => b.mtime - a.mtime);
-  return { pdfs: results };
+  const seen = new Set();
+  const unique = [];
+  for (const p of results) {
+    if (!seen.has(p.path)) {
+      seen.add(p.path);
+      unique.push(p);
+    }
+  }
+  unique.sort((a, b) => b.mtime - a.mtime);
+  return { pdfs: unique };
 });
 
 app.api('/api/load-pdf', (data) => {
