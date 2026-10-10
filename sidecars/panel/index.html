@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PDF Viewer</title>
+  <link rel="stylesheet" href="/styles.css">
+  <!-- Antigravity Host Bridge: injects theme tokens & window.sidecar -->
+  <script src="/preload.js"></script>
+  <!-- Vendored PDF.js library -->
+  <script src="/lib/pdf.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Top Bar -->
+    <header class="top-bar">
+      <div class="brand">
+        <span class="brand-badge">PDF</span>
+        <span>Viewer</span>
+      </div>
+
+      <div class="top-actions">
+        <!-- Workspace PDF quick-select -->
+        <select id="workspaceSelect" class="select-input" title="PDFs in your active workspace" hidden>
+          <option value="" disabled selected>Workspace PDFs...</option>
+        </select>
+
+        <!-- Open button -->
+        <label class="btn btn-primary" title="Open PDF from your computer">
+          Open
+          <input type="file" id="fileInput" accept="application/pdf" hidden>
+        </label>
+      </div>
+    </header>
+
+    <!-- Document Toolbar (shown when a PDF is open) -->
+    <div id="docToolbar" class="doc-toolbar" hidden>
+      <div class="toolbar-group">
+        <span id="docName" class="doc-name" title="">document.pdf</span>
+      </div>
+
+      <div class="toolbar-group">
+        <button id="prevPageBtn" class="btn btn-icon" title="Previous page (Left arrow)">◀</button>
+        <span>
+          <input type="number" id="pageNumInput" class="page-num-input" value="1" min="1">
+          / <span id="pageCount">1</span>
+        </span>
+        <button id="nextPageBtn" class="btn btn-icon" title="Next page (Right arrow)">▶</button>
+      </div>
+
+      <div class="toolbar-group">
+        <button id="zoomOutBtn" class="btn btn-icon" title="Zoom out">−</button>
+        <span id="zoomLevelText" class="doc-name" style="width: 44px; text-align: center;">100%</span>
+        <button id="zoomInBtn" class="btn btn-icon" title="Zoom in">+</button>
+        <button id="fitWidthBtn" class="btn" title="Fit to width">Fit</button>
+      </div>
+
+      <div class="toolbar-group">
+        <button id="modeToggleBtn" class="btn" title="Toggle Single / Continuous view">Single</button>
+        <button id="askAgentBtn" class="btn btn-agent" title="Ask Antigravity about this PDF">Ask Agent</button>
+      </div>
+    </div>
+
+    <!-- Main Viewer Area -->
+    <main id="viewerContainer" class="viewer-container">
+      <!-- Empty State -->
+      <div id="emptyState" class="empty-state">
+        <div id="dropzone" class="dropzone">
+          <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          <div class="dropzone-title">Drop a PDF here to view</div>
+          <div class="dropzone-sub">or click "Open" to select a file from your Mac</div>
+        </div>
+
+        <div id="workspaceList" class="workspace-list" hidden>
+          <div class="workspace-list-title">PDFs Found in Workspace</div>
+          <div id="workspaceItems"></div>
+        </div>
+      </div>
+
+      <!-- PDF Page Canvases (injected here) -->
+      <div id="pagesContainer" hidden></div>
+    </main>
+
+    <!-- Loading Spinner -->
+    <div id="loadingOverlay" class="loading-overlay" hidden>
+      <div class="spinner"></div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast" hidden></div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

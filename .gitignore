@@ -1,0 +1,14 @@
+# Operating System
+.DS_Store
+Thumbs.db
+
+# Logs & Runtime data
+*.log
+.data/
+data/
+logs/
+events/
+
+# Node
+node_modules/
+npm-debug.log*

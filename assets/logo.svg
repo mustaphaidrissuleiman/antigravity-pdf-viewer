@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#e53935"/>
+  <!-- Document background -->
+  <path d="M18 12 H38 L48 22 V50 C48 52 46.5 53.5 44.5 53.5 H18 C16 53.5 14.5 52 14.5 50 V15.5 C14.5 13.5 16 12 18 12 Z" fill="#ffffff"/>
+  <!-- Fold corner -->
+  <path d="M38 12 V22 H48 Z" fill="#ffcdd2"/>
+  <!-- PDF Badge / Text -->
+  <rect x="18" y="27" width="28" height="15" rx="3" fill="#b71c1c"/>
+  <text x="32" y="38.5" font-family="-apple-system, system-ui, sans-serif" font-size="9" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="0.5">PDF</text>
+  <!-- Lines below -->
+  <line x1="20" y1="46" x2="44" y2="46" stroke="#e0e0e0" stroke-width="2" stroke-linecap="round"/>
+</svg>

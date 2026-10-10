@@ -1,0 +1,12 @@
+{
+  "name": "pdf-viewer",
+  "displayName": "PDF Viewer",
+  "version": "1.0.0",
+  "description": "Interactive PDF reader in the side panel with page navigation, zoom, workspace file discovery, and agent analysis.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Open the PDF viewer in the side panel",
+    "Analyze the open PDF document",
+    "Find all PDFs in my current workspace"
+  ]
+}
