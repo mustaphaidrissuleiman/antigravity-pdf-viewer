@@ -18,6 +18,13 @@ const zoomLevelText = document.getElementById('zoomLevelText');
 const fitWidthBtn = document.getElementById('fitWidthBtn');
 const modeToggleBtn = document.getElementById('modeToggleBtn');
 const askAgentBtn = document.getElementById('askAgentBtn');
+const askAgentOptionsBtn = document.getElementById('askAgentOptionsBtn');
+const askAgentModal = document.getElementById('askAgentModal');
+const closeModalBtn = document.getElementById('closeModalBtn');
+const cancelModalBtn = document.getElementById('cancelModalBtn');
+const submitNewChatBtn = document.getElementById('submitNewChatBtn');
+const modalDocName = document.getElementById('modalDocName');
+const customPromptInput = document.getElementById('customPromptInput');
 const emptyState = document.getElementById('emptyState');
 const dropzone = document.getElementById('dropzone');
 const workspaceList = document.getElementById('workspaceList');
@@ -144,20 +151,54 @@ function setupEventListeners() {
     if (path) loadPdfByPath(path);
   });
 
-  // Ask agent integration
+  // Ask agent integration - Launches in a NEW chat pane
   askAgentBtn.addEventListener('click', () => {
-    if (!currentDoc) return;
-    const msg = currentDocPath
-      ? `Please review the document at "${currentDocPath}". Summarize its key points and structure.`
-      : `I've opened "${currentDocName}". Could you help me analyze its contents?`;
-
-    if (window.sidecar?.agent?.sendMessage && window.sidecar?.conversationId) {
-      window.sidecar.agent.sendMessage(msg);
-      showToast('Prompt sent to Antigravity conversation!');
-    } else {
-      showToast('Active conversation required to chat with agent.');
-    }
+    startNewChatWithAgent();
   });
+
+  if (askAgentOptionsBtn) {
+    askAgentOptionsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openPromptModal();
+    });
+  }
+
+  // Modal events
+  if (closeModalBtn) closeModalBtn.addEventListener('click', closePromptModal);
+  if (cancelModalBtn) cancelModalBtn.addEventListener('click', closePromptModal);
+  if (submitNewChatBtn) {
+    submitNewChatBtn.addEventListener('click', () => {
+      startNewChatWithAgent(customPromptInput.value);
+    });
+  }
+
+  if (askAgentModal) {
+    askAgentModal.addEventListener('click', (e) => {
+      if (e.target === askAgentModal) closePromptModal();
+    });
+  }
+
+  // Quick prompt chips
+  document.querySelectorAll('.chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      if (customPromptInput) {
+        customPromptInput.value = chip.dataset.prompt || '';
+        customPromptInput.focus();
+      }
+    });
+  });
+
+  // Submit on Cmd+Enter / Ctrl+Enter inside modal
+  if (customPromptInput) {
+    customPromptInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        startNewChatWithAgent(customPromptInput.value);
+      } else if (e.key === 'Escape') {
+        closePromptModal();
+      }
+    });
+  }
 
   // Keyboard navigation
   window.addEventListener('keydown', (e) => {
@@ -567,6 +608,73 @@ async function loadWorkspacePdfs(explicitUris) {
   } catch (err) {
     console.debug('Failed to list workspace PDFs', err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Agent Actions (New Chat Pane)
+// ---------------------------------------------------------------------------
+
+async function startNewChatWithAgent(customPrompt) {
+  if (!currentDoc) {
+    showToast('Please open a PDF document first');
+    return;
+  }
+
+  showLoading(true);
+  showToast('Starting new chat pane...');
+
+  try {
+    const docRef = currentDocPath
+      ? `"${currentDocName}" (located at: ${currentDocPath})`
+      : `document "${currentDocName}"`;
+
+    let promptText = '';
+    if (customPrompt && customPrompt.trim()) {
+      promptText = `Regarding ${docRef}:\n\n${customPrompt.trim()}`;
+    } else {
+      promptText = `I have opened ${docRef} in the PDF Viewer. Please analyze this document and provide a comprehensive overview covering its key sections, findings, and highlights.`;
+    }
+
+    const titleText = `PDF: ${currentDocName}`;
+
+    if (window.sidecar?.agent?.startConversation) {
+      const res = await window.sidecar.agent.startConversation(promptText, titleText);
+      const newId = res?.conversationId || res?.id || res?.result?.conversationId;
+      if (newId && window.sidecar?.ui?.toggleConversation) {
+        window.sidecar.ui.toggleConversation(newId);
+      }
+      showToast('New chat pane opened!');
+    } else if (window.sidecar?.agent?.sendMessage && window.sidecar?.conversationId) {
+      await window.sidecar.agent.sendMessage(promptText);
+      showToast('Prompt sent to active conversation!');
+    } else {
+      showToast('Agent bridge connecting...');
+    }
+  } catch (err) {
+    showToast(`Could not open chat pane: ${err.message}`);
+  } finally {
+    showLoading(false);
+    closePromptModal();
+  }
+}
+
+function openPromptModal() {
+  if (!currentDoc) {
+    showToast('Please open a PDF document first');
+    return;
+  }
+  if (modalDocName) modalDocName.textContent = currentDocName;
+  if (customPromptInput && !customPromptInput.value.trim()) {
+    customPromptInput.value = 'Please provide a comprehensive summary of this document, including its key sections, findings, and conclusions.';
+  }
+  if (askAgentModal) {
+    askAgentModal.hidden = false;
+    if (customPromptInput) customPromptInput.focus();
+  }
+}
+
+function closePromptModal() {
+  if (askAgentModal) askAgentModal.hidden = true;
 }
 
 // ---------------------------------------------------------------------------
