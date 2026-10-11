@@ -18,13 +18,11 @@ const zoomLevelText = document.getElementById('zoomLevelText');
 const fitWidthBtn = document.getElementById('fitWidthBtn');
 const modeToggleBtn = document.getElementById('modeToggleBtn');
 const askAgentBtn = document.getElementById('askAgentBtn');
-const askAgentOptionsBtn = document.getElementById('askAgentOptionsBtn');
-const askAgentModal = document.getElementById('askAgentModal');
-const closeModalBtn = document.getElementById('closeModalBtn');
-const cancelModalBtn = document.getElementById('cancelModalBtn');
-const submitNewChatBtn = document.getElementById('submitNewChatBtn');
-const modalDocName = document.getElementById('modalDocName');
-const customPromptInput = document.getElementById('customPromptInput');
+const agentPromptDrawer = document.getElementById('agentPromptDrawer');
+const promptDocName = document.getElementById('promptDocName');
+const closePromptDrawerBtn = document.getElementById('closePromptDrawerBtn');
+const agentPromptInput = document.getElementById('agentPromptInput');
+const submitPromptBtn = document.getElementById('submitPromptBtn');
 const emptyState = document.getElementById('emptyState');
 const dropzone = document.getElementById('dropzone');
 const workspaceList = document.getElementById('workspaceList');
@@ -151,58 +149,48 @@ function setupEventListeners() {
     if (path) loadPdfByPath(path);
   });
 
-  // Ask agent integration - Launches in a NEW chat pane
+  // Ask agent integration - Toggles prompt drawer
   askAgentBtn.addEventListener('click', () => {
-    startNewChatWithAgent();
+    togglePromptDrawer();
   });
 
-  if (askAgentOptionsBtn) {
-    askAgentOptionsBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openPromptModal();
+  if (closePromptDrawerBtn) {
+    closePromptDrawerBtn.addEventListener('click', () => {
+      togglePromptDrawer(false);
     });
   }
 
-  // Modal events
-  if (closeModalBtn) closeModalBtn.addEventListener('click', closePromptModal);
-  if (cancelModalBtn) cancelModalBtn.addEventListener('click', closePromptModal);
-  if (submitNewChatBtn) {
-    submitNewChatBtn.addEventListener('click', () => {
-      startNewChatWithAgent(customPromptInput.value);
-    });
-  }
-
-  if (askAgentModal) {
-    askAgentModal.addEventListener('click', (e) => {
-      if (e.target === askAgentModal) closePromptModal();
+  if (submitPromptBtn) {
+    submitPromptBtn.addEventListener('click', () => {
+      startNewChatWithAgent(agentPromptInput?.value);
     });
   }
 
   // Quick prompt chips
   document.querySelectorAll('.chip').forEach((chip) => {
     chip.addEventListener('click', () => {
-      if (customPromptInput) {
-        customPromptInput.value = chip.dataset.prompt || '';
-        customPromptInput.focus();
+      if (agentPromptInput) {
+        agentPromptInput.value = chip.dataset.prompt || '';
+        agentPromptInput.focus();
       }
     });
   });
 
-  // Submit on Cmd+Enter / Ctrl+Enter inside modal
-  if (customPromptInput) {
-    customPromptInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+  // Submit on Enter (Shift+Enter for newline) & Escape to close drawer
+  if (agentPromptInput) {
+    agentPromptInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        startNewChatWithAgent(customPromptInput.value);
+        startNewChatWithAgent(agentPromptInput.value);
       } else if (e.key === 'Escape') {
-        closePromptModal();
+        togglePromptDrawer(false);
       }
     });
   }
 
   // Keyboard navigation
   window.addEventListener('keydown', (e) => {
-    if (document.activeElement.tagName === 'INPUT') return;
+    if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
     if (e.key === 'ArrowLeft') changePage(currentPageNum - 1);
     if (e.key === 'ArrowRight') changePage(currentPageNum + 1);
     if (e.key === '+' || e.key === '=') setScale(currentScale + 0.2);
@@ -301,6 +289,7 @@ async function displayPdfData(uint8Array, name, path) {
   // Update UI headers
   docNameEl.textContent = name;
   docNameEl.title = path || name;
+  if (promptDocName) promptDocName.textContent = name;
   pageCountEl.textContent = doc.numPages;
   pageNumInput.max = doc.numPages;
   pageNumInput.value = 1;
@@ -611,8 +600,32 @@ async function loadWorkspacePdfs(explicitUris) {
 }
 
 // ---------------------------------------------------------------------------
-// Agent Actions (New Chat Pane)
+// Agent Actions (Prompt Drawer & New Chat Pane)
 // ---------------------------------------------------------------------------
+
+function togglePromptDrawer(forceOpen) {
+  if (!currentDoc) {
+    showToast('Please open a PDF document first');
+    return;
+  }
+  const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : (agentPromptDrawer ? agentPromptDrawer.hidden : false);
+  if (!agentPromptDrawer) return;
+
+  if (shouldOpen) {
+    if (promptDocName) promptDocName.textContent = currentDocName;
+    agentPromptDrawer.hidden = false;
+    if (askAgentBtn) askAgentBtn.classList.add('active');
+    setTimeout(() => {
+      if (agentPromptInput) {
+        agentPromptInput.focus();
+        agentPromptInput.select();
+      }
+    }, 50);
+  } else {
+    agentPromptDrawer.hidden = true;
+    if (askAgentBtn) askAgentBtn.classList.remove('active');
+  }
+}
 
 async function startNewChatWithAgent(customPrompt) {
   if (!currentDoc) {
@@ -660,27 +673,8 @@ async function startNewChatWithAgent(customPrompt) {
     showToast(`Could not open chat pane: ${err.message}`);
   } finally {
     showLoading(false);
-    closePromptModal();
+    togglePromptDrawer(false);
   }
-}
-
-function openPromptModal() {
-  if (!currentDoc) {
-    showToast('Please open a PDF document first');
-    return;
-  }
-  if (modalDocName) modalDocName.textContent = currentDocName;
-  if (customPromptInput && !customPromptInput.value.trim()) {
-    customPromptInput.value = 'Please provide a comprehensive summary of this document, including its key sections, findings, and conclusions.';
-  }
-  if (askAgentModal) {
-    askAgentModal.hidden = false;
-    if (customPromptInput) customPromptInput.focus();
-  }
-}
-
-function closePromptModal() {
-  if (askAgentModal) askAgentModal.hidden = true;
 }
 
 // ---------------------------------------------------------------------------

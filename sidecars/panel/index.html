@@ -57,10 +57,33 @@
 
       <div class="toolbar-group">
         <button id="modeToggleBtn" class="btn" title="Toggle Single / Continuous view">Single</button>
-        <div class="btn-group">
-          <button id="askAgentBtn" class="btn btn-agent" title="Open a new chat pane to analyze this PDF">💬 Ask Agent</button>
-          <button id="askAgentOptionsBtn" class="btn btn-agent btn-icon" title="Customize prompt for new chat pane">▾</button>
+        <button id="askAgentBtn" class="btn btn-agent" title="Ask Antigravity about this PDF">💬 Ask Agent</button>
+      </div>
+    </div>
+
+    <!-- Agent Prompt Drawer (opens when clicking Ask Agent) -->
+    <div id="agentPromptDrawer" class="agent-prompt-drawer" hidden>
+      <div class="prompt-drawer-header">
+        <div class="prompt-drawer-title">
+          <span class="prompt-sparkle">✦</span> Ask Antigravity about <strong id="promptDocName">document.pdf</strong>
         </div>
+        <button id="closePromptDrawerBtn" class="btn btn-icon btn-ghost" title="Close (Esc)">✕</button>
+      </div>
+      <div class="quick-chips">
+        <button class="chip" data-prompt="Please provide a comprehensive summary of this document, including its key sections, findings, and conclusions.">📝 Summary</button>
+        <button class="chip" data-prompt="Extract the main action items, recommendations, and next steps from this document.">📋 Action Items</button>
+        <button class="chip" data-prompt="Critically review this document, highlighting its strengths, weaknesses, risks, and notable details.">🔍 Deep Review</button>
+        <button class="chip" data-prompt="Extract and explain all important numbers, financial figures, metrics, and tables in this document.">📊 Metrics</button>
+      </div>
+      <div class="prompt-input-row">
+        <textarea id="agentPromptInput" class="prompt-textarea" rows="2" placeholder="Ask a question or enter instructions about this PDF... (Enter to submit, Shift+Enter for newline)"></textarea>
+        <button id="submitPromptBtn" class="btn btn-primary btn-submit-prompt" title="Start New Chat Pane">
+          <span>Ask</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
       </div>
     </div>
 
@@ -89,32 +112,6 @@
       <!-- PDF Page Canvases (injected here) -->
       <div id="pagesContainer" hidden></div>
     </main>
-
-    <!-- Ask Agent in New Chat Modal -->
-    <div id="askAgentModal" class="modal-overlay" hidden>
-      <div class="modal-card">
-        <div class="modal-header">
-          <div class="modal-title">Ask Agent in New Chat Pane</div>
-          <button id="closeModalBtn" class="btn btn-icon" style="border:none; background:transparent;">✕</button>
-        </div>
-        <div class="modal-body">
-          <p class="modal-desc" style="margin: 0 0 8px; font-size: 12px; color: var(--muted-foreground, #a1a1aa);">
-            Open a dedicated conversation about <strong id="modalDocName" style="color: var(--foreground, #f4f4f5);">document.pdf</strong>:
-          </p>
-          <div class="quick-chips">
-            <button class="chip" data-prompt="Please provide a comprehensive summary of this document, including its key sections, findings, and conclusions.">Summary</button>
-            <button class="chip" data-prompt="Extract the main action items, recommendations, and next steps from this document.">Action Items</button>
-            <button class="chip" data-prompt="Critically review this document, highlighting its strengths, weaknesses, risks, and notable details.">Deep Review</button>
-            <button class="chip" data-prompt="Extract and explain all important numbers, financial figures, metrics, and tables in this document.">Data & Metrics</button>
-          </div>
-          <textarea id="customPromptInput" class="modal-textarea" rows="3" placeholder="What would you like the agent to do with this document?"></textarea>
-        </div>
-        <div class="modal-footer">
-          <button id="cancelModalBtn" class="btn">Cancel</button>
-          <button id="submitNewChatBtn" class="btn btn-primary">Start New Chat Pane</button>
-        </div>
-      </div>
-    </div>
 
     <!-- Loading Spinner -->
     <div id="loadingOverlay" class="loading-overlay" hidden>

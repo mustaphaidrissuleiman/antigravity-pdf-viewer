@@ -368,55 +368,91 @@ canvas {
   padding: 5px 6px;
 }
 
-/* Modal Dialog ------------------------------------------------------------ */
+/* Agent Prompt Drawer ----------------------------------------------------- */
 
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.65);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-  padding: 16px;
-  backdrop-filter: blur(4px);
-}
-
-.modal-card {
-  background: var(--card, #27272a);
-  border: 1px solid var(--border, #3f3f46);
-  border-radius: var(--radius);
-  width: 100%;
-  max-width: 440px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+.agent-prompt-drawer {
+  background: color-mix(in srgb, var(--card, #27272a) 85%, var(--background, #18181b));
+  border-bottom: 1px solid var(--border, #3f3f46);
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
+  gap: 8px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  animation: slideDown 0.15s ease-out;
 }
 
-.modal-header {
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.prompt-drawer-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.modal-title {
-  font-size: 13px;
-  font-weight: 600;
+.prompt-drawer-title {
+  font-size: 11px;
+  color: var(--muted-foreground, #a1a1aa);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-drawer-title strong {
   color: var(--foreground, #f4f4f5);
+  font-weight: 600;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: bottom;
+}
+
+.prompt-sparkle {
+  color: var(--primary, #60a5fa);
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground, #a1a1aa);
+  padding: 2px 6px;
+  min-width: unset;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn-ghost:hover {
+  background: color-mix(in srgb, var(--secondary, #3f3f46) 50%, transparent);
+  color: var(--foreground, #ffffff);
 }
 
 .quick-chips {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-  margin: 8px 0;
+  margin: 0;
 }
 
 .chip {
   font-size: 11px;
-  padding: 4px 9px;
+  padding: 3px 8px;
   border-radius: 12px;
   background: var(--secondary, #3f3f46);
   color: var(--secondary-foreground, #f4f4f5);
@@ -424,6 +460,7 @@ canvas {
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
+  white-space: nowrap;
 }
 
 .chip:hover {
@@ -432,8 +469,16 @@ canvas {
   color: #ffffff;
 }
 
-.modal-textarea {
-  width: 100%;
+.prompt-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.prompt-textarea {
+  flex: 1;
+  min-height: 48px;
+  max-height: 120px;
   padding: 8px 10px;
   font-size: 12px;
   background: var(--background, #18181b);
@@ -443,16 +488,29 @@ canvas {
   resize: vertical;
   outline: none;
   font-family: inherit;
+  line-height: 1.4;
   box-sizing: border-box;
+  transition: border-color 0.15s ease;
 }
 
-.modal-textarea:focus {
+.prompt-textarea:focus {
   border-color: var(--primary, #3b82f6);
 }
 
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
+.btn-submit-prompt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn-agent.active {
+  background: var(--primary, #3b82f6);
+  color: #ffffff;
+  border-color: transparent;
 }
