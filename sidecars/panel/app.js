@@ -162,7 +162,7 @@ function setupEventListeners() {
 
   if (submitPromptBtn) {
     submitPromptBtn.addEventListener('click', () => {
-      startNewChatWithAgent(agentPromptInput?.value);
+      askAgent(agentPromptInput?.value);
     });
   }
 
@@ -181,7 +181,7 @@ function setupEventListeners() {
     agentPromptInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        startNewChatWithAgent(agentPromptInput.value);
+        askAgent(agentPromptInput.value);
       } else if (e.key === 'Escape') {
         togglePromptDrawer(false);
       }
@@ -627,14 +627,14 @@ function togglePromptDrawer(forceOpen) {
   }
 }
 
-async function startNewChatWithAgent(customPrompt) {
+async function askAgent(customPrompt) {
   if (!currentDoc) {
     showToast('Please open a PDF document first');
     return;
   }
 
   showLoading(true);
-  showToast('Starting new chat pane...');
+  showToast('Sending prompt to Antigravity...');
 
   try {
     const docRef = currentDocPath
@@ -645,32 +645,26 @@ async function startNewChatWithAgent(customPrompt) {
     if (customPrompt && customPrompt.trim()) {
       promptText = `Regarding ${docRef}:\n\n${customPrompt.trim()}`;
     } else {
-      promptText = `I have opened ${docRef} in the PDF Viewer. Please analyze this document and provide a comprehensive overview covering its key sections, findings, and highlights.`;
+      promptText = `Regarding ${docRef}:\nPlease analyze this document and summarize its key points and takeaways.`;
     }
 
-    const titleText = `PDF: ${currentDocName}`;
-
-    if (window.sidecar?.agent?.startConversation) {
-      const res = await window.sidecar.agent.startConversation(promptText, titleText);
-      const newId =
-        res?.response?.newConversation?.conversationId ||
-        res?.newConversation?.conversationId ||
-        res?.conversationId ||
-        res?.id ||
-        res?.result?.conversationId;
-
-      if (newId && window.sidecar?.ui?.toggleConversation) {
-        window.sidecar.ui.toggleConversation(newId);
+    if (window.sidecar?.agent?.sendMessage) {
+      if (window.sidecar.conversationId) {
+        await window.sidecar.agent.sendMessage(promptText, window.sidecar.conversationId);
+      } else {
+        await window.sidecar.agent.sendMessage(promptText);
       }
-      showToast('New chat pane opened!');
-    } else if (window.sidecar?.agent?.sendMessage && window.sidecar?.conversationId) {
-      await window.sidecar.agent.sendMessage(promptText);
-      showToast('Prompt sent to active conversation!');
+      showToast('Prompt sent to chat!');
+      if (agentPromptInput) agentPromptInput.value = '';
+    } else if (window.sidecar?.agent?.startConversation) {
+      await window.sidecar.agent.startConversation(promptText);
+      showToast('Prompt sent to Antigravity!');
+      if (agentPromptInput) agentPromptInput.value = '';
     } else {
       showToast('Agent bridge connecting...');
     }
   } catch (err) {
-    showToast(`Could not open chat pane: ${err.message}`);
+    showToast(`Could not send prompt: ${err.message}`);
   } finally {
     showLoading(false);
     togglePromptDrawer(false);
