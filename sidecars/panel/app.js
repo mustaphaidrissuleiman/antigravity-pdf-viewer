@@ -639,7 +639,13 @@ async function startNewChatWithAgent(customPrompt) {
 
     if (window.sidecar?.agent?.startConversation) {
       const res = await window.sidecar.agent.startConversation(promptText, titleText);
-      const newId = res?.conversationId || res?.id || res?.result?.conversationId;
+      const newId =
+        res?.response?.newConversation?.conversationId ||
+        res?.newConversation?.conversationId ||
+        res?.conversationId ||
+        res?.id ||
+        res?.result?.conversationId;
+
       if (newId && window.sidecar?.ui?.toggleConversation) {
         window.sidecar.ui.toggleConversation(newId);
       }
