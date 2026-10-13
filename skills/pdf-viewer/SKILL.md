@@ -9,7 +9,8 @@ Whenever the user asks to view, open, inspect, or display a PDF document:
 
 1. Surface the clickable sidecar pill to open the PDF in the Auxiliary Side Panel:
    - For a specific file:
-     `[Open <filename>.pdf in Side Panel](sidecar://pdf-viewer/panel/?file=<absolute_or_workspace_path>)`
+     `[Open <filename>.pdf in Side Panel](sidecar://pdf-viewer/panel/?file=<encoded_path>)`
+     *(Ensure paths with spaces or parentheses are URL-encoded, e.g. `%20`)*
    - For the general PDF Viewer:
      `[Open PDF Viewer](sidecar://pdf-viewer/panel/)`
 

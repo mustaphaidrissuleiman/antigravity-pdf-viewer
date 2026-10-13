@@ -44,20 +44,49 @@ let isRendering = false;
 // Initialization & URL Detection
 // ---------------------------------------------------------------------------
 
-async function checkUrlParams() {
+function extractPathFromUrl(urlString) {
+  if (!urlString || typeof urlString !== 'string') return null;
   try {
-    const url = new URL(window.location.href);
+    const url = new URL(urlString, window.location.origin || 'http://localhost');
     let fileParam = url.searchParams.get('file') || url.searchParams.get('path');
-    if (!fileParam && window.location.hash) {
-      const hashParams = new URLSearchParams(window.location.hash.replace(/^#\/?/, ''));
+    if (!fileParam && url.hash) {
+      const hashPart = url.hash.replace(/^#\/?/, '');
+      const hashQuery = hashPart.includes('?') ? hashPart.split('?')[1] : hashPart;
+      const hashParams = new URLSearchParams(hashQuery);
       fileParam = hashParams.get('file') || hashParams.get('path');
     }
-    if (fileParam && fileParam !== currentDocPath) {
+    if (!fileParam && urlString.includes('file=')) {
+      const m = urlString.match(/[?&#]file=([^&#]+)/);
+      if (m) fileParam = decodeURIComponent(m[1]);
+    }
+    if (!fileParam && urlString.includes('path=')) {
+      const m = urlString.match(/[?&#]path=([^&#]+)/);
+      if (m) fileParam = decodeURIComponent(m[1]);
+    }
+    if (fileParam) {
+      fileParam = fileParam.trim();
+      if ((fileParam.startsWith('"') && fileParam.endsWith('"')) ||
+          (fileParam.startsWith("'") && fileParam.endsWith("'")) ||
+          (fileParam.startsWith('`') && fileParam.endsWith('`'))) {
+        fileParam = fileParam.slice(1, -1).trim();
+      }
+      return fileParam;
+    }
+  } catch (err) {
+    console.debug('Failed to parse URL string', err);
+  }
+  return null;
+}
+
+async function checkUrlParams(force = false) {
+  try {
+    const fileParam = extractPathFromUrl(window.location.href);
+    if (fileParam && (force || !currentDoc || fileParam !== currentDocPath)) {
       await loadPdfByPath(fileParam, true);
       return true;
     }
   } catch (err) {
-    console.debug('Failed to parse URL params', err);
+    console.debug('Failed to check URL params', err);
   }
   return false;
 }
@@ -218,8 +247,16 @@ function setupEventListeners() {
   // Listen for postMessage from Antigravity host
   window.addEventListener('message', (event) => {
     const data = event.data;
-    if (data && (data.file || data.path)) {
-      loadPdfByPath(data.file || data.path, true);
+    if (!data) return;
+    const extracted =
+      data.file ||
+      data.path ||
+      data.payload?.file ||
+      data.payload?.path ||
+      data.payload?.uri ||
+      extractPathFromUrl(data.url || data.payload?.url || (typeof data === 'string' ? data : null));
+    if (extracted) {
+      loadPdfByPath(extracted, true);
     }
   });
 }
@@ -227,6 +264,16 @@ function setupEventListeners() {
 // ---------------------------------------------------------------------------
 // Loading PDFs
 // ---------------------------------------------------------------------------
+
+function base64ToUint8Array(base64) {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
 
 async function loadFile(file) {
   showLoading(true);
@@ -241,6 +288,7 @@ async function loadFile(file) {
 }
 
 async function loadPdfByPath(path, notify = true) {
+  if (!path) return;
   showLoading(true);
   try {
     const uris = (await window.sidecar?.getWorkspaceUris?.()) || [];
@@ -251,14 +299,23 @@ async function loadPdfByPath(path, notify = true) {
     const data = await res?.json?.();
 
     if (!data?.success) {
-      if (notify) showToast(data?.error || 'Could not load PDF');
+      if (notify) showToast(data?.error || `Could not find PDF: ${path}`);
       return;
     }
 
-    const binary = atob(data.base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
+    let bytes;
+    if (data.base64) {
+      bytes = base64ToUint8Array(data.base64);
+    } else {
+      // Stream raw binary for large PDFs
+      const rawRes = await window.sidecar?.fetch?.(`/api/raw-pdf?path=${encodeURIComponent(data.path)}`, {
+        method: 'GET',
+      });
+      if (!rawRes?.ok) {
+        throw new Error(`Failed to stream PDF (${rawRes?.status || 'network error'})`);
+      }
+      const buffer = await rawRes.arrayBuffer();
+      bytes = new Uint8Array(buffer);
     }
 
     await displayPdfData(bytes, data.name, data.path);
@@ -269,7 +326,7 @@ async function loadPdfByPath(path, notify = true) {
       body: JSON.stringify({ lastOpenedPath: data.path }),
     });
   } catch (err) {
-    if (notify) showToast(`Failed to load file: ${err.message}`);
+    if (notify) showToast(`Failed to load PDF: ${err.message}`);
   } finally {
     showLoading(false);
   }
@@ -539,11 +596,19 @@ async function setScale(scale) {
 
 async function fitToWidth() {
   if (!currentDoc) return;
-  const page = await currentDoc.getPage(currentPageNum);
-  const containerWidth = document.getElementById('viewerContainer').clientWidth - 48;
-  const baseViewport = page.getViewport({ scale: 1.0 });
-  const scale = containerWidth / baseViewport.width;
-  await setScale(Math.max(0.4, scale));
+  try {
+    const page = await currentDoc.getPage(currentPageNum);
+    const container = document.getElementById('viewerContainer');
+    const containerWidth = Math.max(260, (container?.clientWidth || 360) - 48);
+    const baseViewport = page.getViewport({ scale: 1.0 });
+    const pageWidth = baseViewport?.width || 600;
+    let scale = containerWidth / pageWidth;
+    if (isNaN(scale) || !isFinite(scale) || scale <= 0) scale = 1.0;
+    await setScale(Math.max(0.4, Math.min(3.0, scale)));
+  } catch (err) {
+    console.debug('fitToWidth fallback', err);
+    await setScale(1.0);
+  }
 }
 
 // ---------------------------------------------------------------------------

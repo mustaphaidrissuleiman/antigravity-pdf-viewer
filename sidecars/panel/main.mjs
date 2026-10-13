@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Response, SidecarApp } from 'sidecar_sdk';
@@ -10,40 +11,164 @@ const STATE_FILE = join(DATA_DIR, 'state.json');
 const app = new SidecarApp();
 
 // ---------------------------------------------------------------------------
-// Static files
+// Static files & Routes
 // ---------------------------------------------------------------------------
 
 const readLocal = (name) => readFileSync(join(HERE, name), 'utf8');
 
-app.page('/', () => readLocal('index.html'));
-app.page('/open', () => readLocal('index.html'));
-app.page('/viewer', () => readLocal('index.html'));
-app.page('/app.js', () => readLocal('app.js'));
-app.api('/styles.css', () => new Response(readLocal('styles.css'), { contentType: 'text/css' }), 'GET');
+const serveIndex = () => readLocal('index.html');
+const serveAppJs = () => readLocal('app.js');
+const serveStyles = () => new Response(readLocal('styles.css'), { contentType: 'text/css' });
 
-// Cache large libraries in memory
 let cachedPdfJs = null;
 let cachedWorker = null;
 
-app.page('/lib/pdf.js', () => {
-  if (!cachedPdfJs) {
-    cachedPdfJs = readLocal('lib/pdf.js');
-  }
+const servePdfJs = () => {
+  if (!cachedPdfJs) cachedPdfJs = readLocal('lib/pdf.js');
   return cachedPdfJs;
-});
+};
 
-app.page('/lib/pdf.worker.js', () => {
-  if (!cachedWorker) {
-    cachedWorker = readLocal('lib/pdf.worker.js');
-  }
+const serveWorker = () => {
+  if (!cachedWorker) cachedWorker = readLocal('lib/pdf.worker.js');
   return cachedWorker;
-});
+};
+
+// Root & alternate entrypoints
+app.page('/', serveIndex);
+app.page('/index.html', serveIndex);
+app.page('/open', serveIndex);
+app.page('/viewer', serveIndex);
+app.page('/panel', serveIndex);
+app.page('/panel/', serveIndex);
+app.page('/panel/index.html', serveIndex);
+
+// App scripts & styles
+app.page('/app.js', serveAppJs);
+app.page('/panel/app.js', serveAppJs);
+
+app.api('/styles.css', serveStyles, 'GET');
+app.api('/panel/styles.css', serveStyles, 'GET');
+
+// Vendored PDF.js libraries
+app.page('/lib/pdf.js', servePdfJs);
+app.page('/panel/lib/pdf.js', servePdfJs);
+
+app.page('/lib/pdf.worker.js', serveWorker);
+app.page('/panel/lib/pdf.worker.js', serveWorker);
+
+// ---------------------------------------------------------------------------
+// Path Resolution Helper
+// ---------------------------------------------------------------------------
+
+function searchForPdfByName(dirPath, targetName, maxDepth = 4, currentDepth = 0) {
+  if (currentDepth > maxDepth || !existsSync(dirPath)) return null;
+  try {
+    const entries = readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'vendor') continue;
+      const full = join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        const found = searchForPdfByName(full, targetName, maxDepth, currentDepth + 1);
+        if (found) return found;
+      } else if (entry.isFile() && entry.name.toLowerCase() === targetName.toLowerCase()) {
+        return full;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function resolvePdfPath(inputPath, workspaceUris = []) {
+  if (!inputPath || typeof inputPath !== 'string') return null;
+
+  let cleaned = inputPath.trim();
+
+  // Strip wrapping quotes (double, single, backticks)
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+      (cleaned.startsWith("'") && cleaned.endsWith("'")) ||
+      (cleaned.startsWith('`') && cleaned.endsWith('`'))) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+
+  // Handle file:// URIs
+  if (cleaned.startsWith('file://')) {
+    try {
+      cleaned = fileURLToPath(cleaned);
+    } catch {
+      cleaned = cleaned.replace(/^file:\/\//, '');
+    }
+  }
+
+  // Handle tilde ~
+  if (cleaned === '~' || cleaned.startsWith('~/')) {
+    cleaned = join(homedir(), cleaned.slice(2));
+  }
+
+  // 1. Check raw path directly
+  if (existsSync(cleaned) && statSync(cleaned).isFile()) {
+    return cleaned;
+  }
+
+  // 2. Check URL-decoded path
+  try {
+    const decoded = decodeURIComponent(cleaned);
+    if (existsSync(decoded) && statSync(decoded).isFile()) {
+      return decoded;
+    }
+  } catch {}
+
+  // 3. Candidate base directories
+  const candidateBases = [];
+
+  if (Array.isArray(workspaceUris)) {
+    for (const uri of workspaceUris) {
+      try {
+        const p = uri.startsWith('file://') ? fileURLToPath(uri) : decodeURIComponent(uri);
+        if (existsSync(p)) candidateBases.push(p);
+      } catch {}
+    }
+  }
+
+  candidateBases.push(process.cwd());
+  candidateBases.push(join(homedir(), '.gemini/antigravity/scratch'));
+  candidateBases.push(join(homedir(), 'Downloads'));
+  candidateBases.push(join(homedir(), 'Documents'));
+  candidateBases.push(join(homedir(), 'Desktop'));
+
+  // Test joining with candidate bases
+  for (const base of candidateBases) {
+    if (!existsSync(base)) continue;
+    try {
+      const candidate = join(base, cleaned);
+      if (existsSync(candidate) && statSync(candidate).isFile()) {
+        return candidate;
+      }
+      const decodedCandidate = join(base, decodeURIComponent(cleaned));
+      if (existsSync(decodedCandidate) && statSync(decodedCandidate).isFile()) {
+        return decodedCandidate;
+      }
+    } catch {}
+  }
+
+  // 4. Fuzzy fallback: search by basename in candidate bases
+  // Handles cases where spaces or parentheses truncated the markdown link
+  const targetBaseName = basename(cleaned);
+  if (targetBaseName && targetBaseName.toLowerCase().endsWith('.pdf')) {
+    for (const base of candidateBases) {
+      if (!existsSync(base)) continue;
+      const found = searchForPdfByName(base, targetBaseName, 4);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // APIs
 // ---------------------------------------------------------------------------
 
-app.api('/api/status', () => ({ ok: true, version: '1.0.0' }), 'GET');
+app.api('/api/status', () => ({ ok: true, version: '1.1.0' }), 'GET');
 
 app.api('/api/get-state', () => {
   if (!existsSync(STATE_FILE)) return { lastOpenedPath: null };
@@ -63,21 +188,24 @@ app.api('/api/save-state', (data) => {
 
 app.api('/api/workspace-pdfs', (data) => {
   const uris = Array.isArray(data?.workspaceUris) ? data.workspaceUris : [];
-  const results = [];
+  const folders = [];
 
   for (const uri of uris) {
-    let folderPath = uri;
     try {
-      if (uri.startsWith('file://')) {
-        folderPath = fileURLToPath(uri);
-      } else {
-        folderPath = decodeURIComponent(uri);
-      }
-    } catch {
-      continue;
-    }
-    const found = findPdfs(folderPath, 5, 0);
-    results.push(...found);
+      const folderPath = uri.startsWith('file://') ? fileURLToPath(uri) : decodeURIComponent(uri);
+      if (existsSync(folderPath)) folders.push(folderPath);
+    } catch {}
+  }
+
+  // Include known project & scratch folders
+  folders.push(join(homedir(), '.gemini/antigravity/scratch'));
+
+  const results = [];
+  const checkedFolders = new Set();
+  for (const folder of folders) {
+    if (checkedFolders.has(folder) || !existsSync(folder)) continue;
+    checkedFolders.add(folder);
+    results.push(...findPdfs(folder, 4, 0));
   }
 
   const seen = new Set();
@@ -92,47 +220,52 @@ app.api('/api/workspace-pdfs', (data) => {
   return { pdfs: unique };
 });
 
+// Binary streaming route for raw PDF content (handles arbitrary file sizes smoothly)
+app.api('/api/raw-pdf', (data) => {
+  const resolved = resolvePdfPath(data?.path, data?.workspaceUris);
+  if (!resolved) {
+    return new Response(JSON.stringify({ error: `File not found: ${data?.path || ''}` }), {
+      contentType: 'application/json',
+      status: 404,
+    });
+  }
+  const buffer = readFileSync(resolved);
+  return new Response(buffer, {
+    contentType: 'application/pdf',
+    headers: {
+      'Content-Disposition': `inline; filename="${basename(resolved)}"`,
+    },
+  });
+}, 'GET');
+
 app.api('/api/load-pdf', (data) => {
-  let targetPath = data?.path;
-  if (!targetPath) return { success: false, error: 'No path specified' };
+  let inputPath = data?.path;
+  if (!inputPath) return { success: false, error: 'No path specified' };
 
   try {
-    if (targetPath.startsWith('file://')) {
-      targetPath = fileURLToPath(targetPath);
-    } else {
-      targetPath = decodeURIComponent(targetPath);
+    const resolved = resolvePdfPath(inputPath, data?.workspaceUris);
+    if (!resolved) {
+      return { success: false, error: `File not found: ${inputPath}` };
     }
 
-    if (!existsSync(targetPath)) {
-      // If relative, check against workspace URIs
-      const uris = Array.isArray(data?.workspaceUris) ? data.workspaceUris : [];
-      for (const uri of uris) {
-        try {
-          const base = uri.startsWith('file://') ? fileURLToPath(uri) : decodeURIComponent(uri);
-          const candidate = join(base, targetPath);
-          if (existsSync(candidate)) {
-            targetPath = candidate;
-            break;
-          }
-        } catch {}
-      }
-    }
-
-    if (!existsSync(targetPath)) {
-      return { success: false, error: `File not found: ${targetPath}` };
-    }
-    const stat = statSync(targetPath);
+    const stat = statSync(resolved);
     if (!stat.isFile()) {
       return { success: false, error: 'Path is not a regular file' };
     }
 
-    const buffer = readFileSync(targetPath);
+    // Embed base64 for files up to 12MB; larger files stream via /api/raw-pdf
+    let base64 = null;
+    if (stat.size <= 12 * 1024 * 1024) {
+      const buffer = readFileSync(resolved);
+      base64 = buffer.toString('base64');
+    }
+
     return {
       success: true,
-      name: basename(targetPath),
-      path: targetPath,
-      base64: buffer.toString('base64'),
-      size: buffer.length,
+      name: basename(resolved),
+      path: resolved,
+      base64,
+      size: stat.size,
     };
   } catch (err) {
     return { success: false, error: err.message };
@@ -162,9 +295,7 @@ function findPdfs(dirPath, maxDepth, currentDepth) {
         });
       }
     }
-  } catch {
-    // Ignore permission or unreadable errors
-  }
+  } catch {}
   return pdfs;
 }
 
