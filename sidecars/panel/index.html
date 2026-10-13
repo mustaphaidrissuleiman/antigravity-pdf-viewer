@@ -12,52 +12,63 @@
 </head>
 <body>
   <div id="app">
-    <!-- Top Bar -->
-    <header class="top-bar">
-      <div class="brand">
-        <span class="brand-badge">PDF</span>
-        <span>Viewer</span>
-      </div>
+    <!-- Hidden File Input for Picker -->
+    <input type="file" id="fileInput" accept="application/pdf" hidden>
 
-      <div class="top-actions">
-        <!-- Workspace PDF quick-select -->
-        <select id="workspaceSelect" class="select-input" title="PDFs in your active workspace" hidden>
-          <option value="" disabled selected>Workspace PDFs...</option>
-        </select>
-
-        <!-- Open button -->
-        <label class="btn btn-primary" title="Open PDF from your computer">
-          Open
-          <input type="file" id="fileInput" accept="application/pdf" hidden>
-        </label>
-      </div>
-    </header>
-
-    <!-- Document Toolbar (shown when a PDF is open) -->
-    <div id="docToolbar" class="doc-toolbar" hidden>
-      <div class="toolbar-group">
+    <!-- Single Unified Document Toolbar (shown when a PDF is open) -->
+    <header id="docToolbar" class="doc-toolbar" hidden>
+      <div class="toolbar-left">
+        <button id="toolbarOpenBtn" class="btn btn-sm btn-open" title="Open another PDF from your Mac">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span>Open</span>
+        </button>
         <span id="docName" class="doc-name" title="">document.pdf</span>
       </div>
 
-      <div class="toolbar-group">
-        <button id="prevPageBtn" class="btn btn-icon" title="Previous page (Left arrow)">◀</button>
-        <span>
+      <div class="toolbar-center">
+        <button id="prevPageBtn" class="btn btn-icon btn-sm" title="Previous page (Left arrow)">◀</button>
+        <div class="page-indicator">
           <input type="number" id="pageNumInput" class="page-num-input" value="1" min="1">
-          / <span id="pageCount">1</span>
-        </span>
-        <button id="nextPageBtn" class="btn btn-icon" title="Next page (Right arrow)">▶</button>
+          <span class="page-sep">/</span>
+          <span id="pageCount">1</span>
+        </div>
+        <button id="nextPageBtn" class="btn btn-icon btn-sm" title="Next page (Right arrow)">▶</button>
       </div>
 
-      <div class="toolbar-group">
-        <button id="zoomOutBtn" class="btn btn-icon" title="Zoom out">−</button>
-        <span id="zoomLevelText" class="doc-name" style="width: 44px; text-align: center;">100%</span>
-        <button id="zoomInBtn" class="btn btn-icon" title="Zoom in">+</button>
-        <button id="fitWidthBtn" class="btn" title="Fit to width">Fit</button>
+      <div class="toolbar-right">
+        <button id="zoomOutBtn" class="btn btn-icon btn-sm" title="Zoom out">−</button>
+        <button id="zoomInBtn" class="btn btn-icon btn-sm" title="Zoom in">+</button>
+        <button id="fitWidthBtn" class="btn btn-sm" title="Fit to width">Fit</button>
+        <button id="modeToggleBtn" class="btn btn-sm" title="Toggle Single / Continuous view">Single</button>
+        <button id="askAgentBtn" class="btn btn-agent btn-sm" title="Ask Antigravity about this PDF">Ask Agent</button>
       </div>
+    </header>
 
-      <div class="toolbar-group">
-        <button id="modeToggleBtn" class="btn" title="Toggle Single / Continuous view">Single</button>
-        <button id="askAgentBtn" class="btn btn-agent" title="Ask Antigravity about this PDF">Ask Agent</button>
+    <!-- Agent Prompt Drawer (opens when clicking Ask Agent) -->
+    <div id="agentPromptDrawer" class="agent-prompt-drawer" hidden>
+      <div class="prompt-drawer-header">
+        <div class="prompt-drawer-title">
+          Ask Antigravity about <strong id="promptDocName">document.pdf</strong>
+        </div>
+        <button id="closePromptDrawerBtn" class="btn btn-icon btn-ghost" title="Close (Esc)">✕</button>
+      </div>
+      <div class="quick-chips">
+        <button class="chip" data-prompt="Please provide a comprehensive summary of this document, including its key sections, findings, and conclusions.">Summary</button>
+        <button class="chip" data-prompt="Extract the main action items, recommendations, and next steps from this document.">Action Items</button>
+        <button class="chip" data-prompt="Critically review this document, highlighting its strengths, weaknesses, risks, and notable details.">Deep Review</button>
+        <button class="chip" data-prompt="Extract and explain all important numbers, financial figures, metrics, and tables in this document.">Metrics</button>
+      </div>
+      <div class="prompt-input-row">
+        <textarea id="agentPromptInput" class="prompt-textarea" rows="2" placeholder="Ask a question or enter instructions about this PDF... (Enter to submit, Shift+Enter for newline)"></textarea>
+        <button id="submitPromptBtn" class="btn btn-primary btn-submit-prompt" title="Send to Antigravity">
+          <span>Ask</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
       </div>
     </div>
 
@@ -92,7 +103,7 @@
       <!-- Empty State -->
       <div id="emptyState" class="empty-state">
         <div id="dropzone" class="dropzone">
-          <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
             <line x1="16" y1="13" x2="8" y2="13"></line>
@@ -100,11 +111,14 @@
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
           <div class="dropzone-title">Drop a PDF here to view</div>
-          <div class="dropzone-sub">or click "Open" to select a file from your Mac</div>
+          <div class="dropzone-sub">or select a file from your Mac</div>
+          <button id="emptyOpenBtn" class="btn btn-primary empty-open-btn">
+            Choose PDF File
+          </button>
         </div>
 
         <div id="workspaceList" class="workspace-list" hidden>
-          <div class="workspace-list-title">PDFs Found in Workspace</div>
+          <div class="workspace-list-title">Workspace PDFs</div>
           <div id="workspaceItems"></div>
         </div>
       </div>

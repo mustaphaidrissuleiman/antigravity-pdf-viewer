@@ -5,6 +5,8 @@ if (typeof pdfjsLib !== 'undefined') {
 
 // Elements
 const fileInput = document.getElementById('fileInput');
+const toolbarOpenBtn = document.getElementById('toolbarOpenBtn');
+const emptyOpenBtn = document.getElementById('emptyOpenBtn');
 const workspaceSelect = document.getElementById('workspaceSelect');
 const docToolbar = document.getElementById('docToolbar');
 const docNameEl = document.getElementById('docName');
@@ -151,6 +153,17 @@ function setupEventListeners() {
     }
   });
 
+  // Open buttons
+  if (toolbarOpenBtn) {
+    toolbarOpenBtn.addEventListener('click', () => fileInput?.click());
+  }
+  if (emptyOpenBtn) {
+    emptyOpenBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput?.click();
+    });
+  }
+
   // Navigation
   prevPageBtn.addEventListener('click', () => changePage(currentPageNum - 1));
   nextPageBtn.addEventListener('click', () => changePage(currentPageNum + 1));
@@ -173,10 +186,12 @@ function setupEventListeners() {
   });
 
   // Workspace dropdown selector
-  workspaceSelect.addEventListener('change', (e) => {
-    const path = e.target.value;
-    if (path) loadPdfByPath(path);
-  });
+  if (workspaceSelect) {
+    workspaceSelect.addEventListener('change', (e) => {
+      const path = e.target.value;
+      if (path) loadPdfByPath(path);
+    });
+  }
 
   // Ask agent integration - Toggles prompt drawer
   askAgentBtn.addEventListener('click', () => {
@@ -588,7 +603,9 @@ async function changePage(num) {
 
 async function setScale(scale) {
   currentScale = Math.round(scale * 10) / 10;
-  zoomLevelText.textContent = `${Math.round(currentScale * 100)}%`;
+  if (zoomLevelText) {
+    zoomLevelText.textContent = `${Math.round(currentScale * 100)}%`;
+  }
   clearPageCache();
   pagesContainer.innerHTML = '';
   await renderView();
@@ -622,8 +639,8 @@ async function loadWorkspacePdfs(explicitUris) {
       : (await window.sidecar?.getWorkspaceUris?.()) || [];
 
     if (!uris.length) {
-      workspaceSelect.hidden = true;
-      workspaceList.hidden = true;
+      if (workspaceSelect) workspaceSelect.hidden = true;
+      if (workspaceList) workspaceList.hidden = true;
       return;
     }
 
@@ -636,28 +653,32 @@ async function loadWorkspacePdfs(explicitUris) {
 
     if (pdfs.length > 0) {
       // Populate select dropdown
-      workspaceSelect.innerHTML = '<option value="" disabled selected>Workspace PDFs...</option>';
-      pdfs.forEach((p) => {
-        const opt = document.createElement('option');
-        opt.value = p.path;
-        opt.textContent = p.name;
-        workspaceSelect.appendChild(opt);
-      });
-      workspaceSelect.hidden = false;
+      if (workspaceSelect) {
+        workspaceSelect.innerHTML = '<option value="" disabled selected>Workspace PDFs...</option>';
+        pdfs.forEach((p) => {
+          const opt = document.createElement('option');
+          opt.value = p.path;
+          opt.textContent = p.name;
+          workspaceSelect.appendChild(opt);
+        });
+        workspaceSelect.hidden = false;
+      }
 
       // Populate empty-state list
-      workspaceItems.innerHTML = '';
-      pdfs.slice(0, 5).forEach((p) => {
-        const btn = document.createElement('button');
-        btn.className = 'pdf-item-btn';
-        btn.innerHTML = `
-          <span class="pdf-item-name">${escapeHtml(p.name)}</span>
-          <span class="pdf-item-size">${formatBytes(p.size)}</span>
-        `;
-        btn.addEventListener('click', () => loadPdfByPath(p.path));
-        workspaceItems.appendChild(btn);
-      });
-      workspaceList.hidden = false;
+      if (workspaceItems && workspaceList) {
+        workspaceItems.innerHTML = '';
+        pdfs.slice(0, 5).forEach((p) => {
+          const btn = document.createElement('button');
+          btn.className = 'pdf-item-btn';
+          btn.innerHTML = `
+            <span class="pdf-item-name">${escapeHtml(p.name)}</span>
+            <span class="pdf-item-size">${formatBytes(p.size)}</span>
+          `;
+          btn.addEventListener('click', () => loadPdfByPath(p.path));
+          workspaceItems.appendChild(btn);
+        });
+        workspaceList.hidden = false;
+      }
     }
   } catch (err) {
     console.debug('Failed to list workspace PDFs', err);
