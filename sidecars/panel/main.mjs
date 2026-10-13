@@ -78,6 +78,10 @@ function searchForPdfByName(dirPath, targetName, maxDepth = 4, currentDepth = 0)
   return null;
 }
 
+function isPdfFile(filePath) {
+  return typeof filePath === 'string' && filePath.toLowerCase().endsWith('.pdf');
+}
+
 function resolvePdfPath(inputPath, workspaceUris = []) {
   if (!inputPath || typeof inputPath !== 'string') return null;
 
@@ -104,15 +108,15 @@ function resolvePdfPath(inputPath, workspaceUris = []) {
     cleaned = join(homedir(), cleaned.slice(2));
   }
 
-  // 1. Check raw path directly
-  if (existsSync(cleaned) && statSync(cleaned).isFile()) {
+  // 1. Check raw path directly (must be a PDF)
+  if (existsSync(cleaned) && statSync(cleaned).isFile() && isPdfFile(cleaned)) {
     return cleaned;
   }
 
   // 2. Check URL-decoded path
   try {
     const decoded = decodeURIComponent(cleaned);
-    if (existsSync(decoded) && statSync(decoded).isFile()) {
+    if (existsSync(decoded) && statSync(decoded).isFile() && isPdfFile(decoded)) {
       return decoded;
     }
   } catch {}
@@ -140,11 +144,11 @@ function resolvePdfPath(inputPath, workspaceUris = []) {
     if (!existsSync(base)) continue;
     try {
       const candidate = join(base, cleaned);
-      if (existsSync(candidate) && statSync(candidate).isFile()) {
+      if (existsSync(candidate) && statSync(candidate).isFile() && isPdfFile(candidate)) {
         return candidate;
       }
       const decodedCandidate = join(base, decodeURIComponent(cleaned));
-      if (existsSync(decodedCandidate) && statSync(decodedCandidate).isFile()) {
+      if (existsSync(decodedCandidate) && statSync(decodedCandidate).isFile() && isPdfFile(decodedCandidate)) {
         return decodedCandidate;
       }
     } catch {}
@@ -153,7 +157,7 @@ function resolvePdfPath(inputPath, workspaceUris = []) {
   // 4. Fuzzy fallback: search by basename in candidate bases
   // Handles cases where spaces or parentheses truncated the markdown link
   const targetBaseName = basename(cleaned);
-  if (targetBaseName && targetBaseName.toLowerCase().endsWith('.pdf')) {
+  if (targetBaseName && isPdfFile(targetBaseName)) {
     for (const base of candidateBases) {
       if (!existsSync(base)) continue;
       const found = searchForPdfByName(base, targetBaseName, 4);
@@ -223,8 +227,8 @@ const handleWorkspacePdfs = (data) => {
 // Binary streaming route for raw PDF content (handles arbitrary file sizes smoothly)
 const handleRawPdf = (data) => {
   const resolved = resolvePdfPath(data?.path, data?.workspaceUris);
-  if (!resolved) {
-    return new Response(JSON.stringify({ error: `File not found: ${data?.path || ''}` }), {
+  if (!resolved || !isPdfFile(resolved)) {
+    return new Response(JSON.stringify({ error: `File not found or not a PDF: ${data?.path || ''}` }), {
       contentType: 'application/json',
       status: 404,
     });
@@ -244,8 +248,8 @@ const handleLoadPdf = (data) => {
 
   try {
     const resolved = resolvePdfPath(inputPath, data?.workspaceUris);
-    if (!resolved) {
-      return { success: false, error: `File not found: ${inputPath}` };
+    if (!resolved || !isPdfFile(resolved)) {
+      return { success: false, error: `File not found or not a PDF: ${inputPath}` };
     }
 
     const stat = statSync(resolved);
