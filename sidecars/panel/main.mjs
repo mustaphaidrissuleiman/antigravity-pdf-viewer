@@ -168,25 +168,25 @@ function resolvePdfPath(inputPath, workspaceUris = []) {
 // APIs
 // ---------------------------------------------------------------------------
 
-app.api('/api/status', () => ({ ok: true, version: '1.1.0' }), 'GET');
+const handleStatus = () => ({ ok: true, version: '1.2.0' });
 
-app.api('/api/get-state', () => {
+const handleGetState = () => {
   if (!existsSync(STATE_FILE)) return { lastOpenedPath: null };
   try {
     return JSON.parse(readFileSync(STATE_FILE, 'utf8'));
   } catch {
     return { lastOpenedPath: null };
   }
-}, 'GET');
+};
 
-app.api('/api/save-state', (data) => {
+const handleSaveState = (data) => {
   mkdirSync(DATA_DIR, { recursive: true });
   const state = { lastOpenedPath: data?.lastOpenedPath || null, savedAt: Date.now() };
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
   return state;
-});
+};
 
-app.api('/api/workspace-pdfs', (data) => {
+const handleWorkspacePdfs = (data) => {
   const uris = Array.isArray(data?.workspaceUris) ? data.workspaceUris : [];
   const folders = [];
 
@@ -218,10 +218,10 @@ app.api('/api/workspace-pdfs', (data) => {
   }
   unique.sort((a, b) => b.mtime - a.mtime);
   return { pdfs: unique };
-});
+};
 
 // Binary streaming route for raw PDF content (handles arbitrary file sizes smoothly)
-app.api('/api/raw-pdf', (data) => {
+const handleRawPdf = (data) => {
   const resolved = resolvePdfPath(data?.path, data?.workspaceUris);
   if (!resolved) {
     return new Response(JSON.stringify({ error: `File not found: ${data?.path || ''}` }), {
@@ -236,9 +236,9 @@ app.api('/api/raw-pdf', (data) => {
       'Content-Disposition': `inline; filename="${basename(resolved)}"`,
     },
   });
-}, 'GET');
+};
 
-app.api('/api/load-pdf', (data) => {
+const handleLoadPdf = (data) => {
   let inputPath = data?.path;
   if (!inputPath) return { success: false, error: 'No path specified' };
 
@@ -270,7 +270,32 @@ app.api('/api/load-pdf', (data) => {
   } catch (err) {
     return { success: false, error: err.message };
   }
-});
+};
+
+// Register API routes for both GET and POST, and for /api/* and /panel/api/*
+app.api('/api/status', handleStatus, 'GET');
+app.api('/panel/api/status', handleStatus, 'GET');
+
+app.api('/api/get-state', handleGetState, 'GET');
+app.api('/panel/api/get-state', handleGetState, 'GET');
+
+app.api('/api/save-state', handleSaveState, 'POST');
+app.api('/api/save-state', handleSaveState, 'GET');
+app.api('/panel/api/save-state', handleSaveState, 'POST');
+app.api('/panel/api/save-state', handleSaveState, 'GET');
+
+app.api('/api/workspace-pdfs', handleWorkspacePdfs, 'GET');
+app.api('/api/workspace-pdfs', handleWorkspacePdfs, 'POST');
+app.api('/panel/api/workspace-pdfs', handleWorkspacePdfs, 'GET');
+app.api('/panel/api/workspace-pdfs', handleWorkspacePdfs, 'POST');
+
+app.api('/api/raw-pdf', handleRawPdf, 'GET');
+app.api('/panel/api/raw-pdf', handleRawPdf, 'GET');
+
+app.api('/api/load-pdf', handleLoadPdf, 'GET');
+app.api('/api/load-pdf', handleLoadPdf, 'POST');
+app.api('/panel/api/load-pdf', handleLoadPdf, 'GET');
+app.api('/panel/api/load-pdf', handleLoadPdf, 'POST');
 
 function findPdfs(dirPath, maxDepth, currentDepth) {
   const pdfs = [];

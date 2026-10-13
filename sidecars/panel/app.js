@@ -93,17 +93,32 @@ async function checkUrlParams(force = false) {
   return false;
 }
 
+async function safeGetWorkspaceUris(timeoutMs = 150) {
+  try {
+    if (!window.sidecar?.getWorkspaceUris) return [];
+    return await Promise.race([
+      window.sidecar.getWorkspaceUris().catch(() => []),
+      new Promise((resolve) => setTimeout(() => resolve([]), timeoutMs)),
+    ]);
+  } catch {
+    return [];
+  }
+}
+
 async function init() {
   setupEventListeners();
 
   const loadedFromUrl = await checkUrlParams();
 
-  await loadWorkspacePdfs();
+  // Load workspace PDFs in the background so it never blocks init
+  loadWorkspacePdfs().catch(() => {});
 
   // Try to restore last opened PDF if none was passed via URL
   if (!loadedFromUrl) {
     try {
-      const res = await window.sidecar?.fetch?.('/api/get-state', { method: 'GET' });
+      const res = await (window.sidecar?.fetch
+        ? window.sidecar.fetch('/api/get-state', { method: 'GET' })
+        : fetch('/api/get-state'));
       const state = await res?.json?.();
       if (state?.lastOpenedPath) {
         await loadPdfByPath(state.lastOpenedPath, false);
@@ -306,14 +321,47 @@ async function loadPdfByPath(path, notify = true) {
   if (!path) return;
   showLoading(true);
   try {
-    const uris = (await window.sidecar?.getWorkspaceUris?.()) || [];
-    const res = await window.sidecar?.fetch?.('/api/load-pdf', {
-      method: 'POST',
-      body: JSON.stringify({ path, workspaceUris: uris }),
-    });
-    const data = await res?.json?.();
+    const uris = await safeGetWorkspaceUris(150);
+
+    let data = null;
+
+    // 1. Try GET /api/load-pdf?path=... first (unauthenticated in SidecarApp, never returns 401)
+    try {
+      const getUrl = `/api/load-pdf?path=${encodeURIComponent(path)}`;
+      const res = await (window.sidecar?.fetch
+        ? window.sidecar.fetch(getUrl, { method: 'GET' })
+        : fetch(getUrl));
+      if (res && res.ok) {
+        data = await res.json();
+      }
+    } catch (err) {
+      console.debug('GET /api/load-pdf failed, attempting POST', err);
+    }
+
+    // 2. Fallback to POST if GET didn't succeed
+    if (!data?.success) {
+      try {
+        const postUrl = '/api/load-pdf';
+        const res = await (window.sidecar?.fetch
+          ? window.sidecar.fetch(postUrl, {
+              method: 'POST',
+              body: JSON.stringify({ path, workspaceUris: uris }),
+            })
+          : fetch(postUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ path, workspaceUris: uris }),
+            }));
+        if (res && res.ok) {
+          data = await res.json();
+        }
+      } catch (err) {
+        console.debug('POST /api/load-pdf failed', err);
+      }
+    }
 
     if (!data?.success) {
+      currentDocPath = null;
       if (notify) showToast(data?.error || `Could not find PDF: ${path}`);
       return;
     }
@@ -322,10 +370,11 @@ async function loadPdfByPath(path, notify = true) {
     if (data.base64) {
       bytes = base64ToUint8Array(data.base64);
     } else {
-      // Stream raw binary for large PDFs
-      const rawRes = await window.sidecar?.fetch?.(`/api/raw-pdf?path=${encodeURIComponent(data.path)}`, {
-        method: 'GET',
-      });
+      // Stream raw binary for large PDFs via GET
+      const streamUrl = `/api/raw-pdf?path=${encodeURIComponent(data.path)}`;
+      const rawRes = await (window.sidecar?.fetch
+        ? window.sidecar.fetch(streamUrl, { method: 'GET' })
+        : fetch(streamUrl));
       if (!rawRes?.ok) {
         throw new Error(`Failed to stream PDF (${rawRes?.status || 'network error'})`);
       }
@@ -336,11 +385,16 @@ async function loadPdfByPath(path, notify = true) {
     await displayPdfData(bytes, data.name, data.path);
 
     // Save as last opened
-    window.sidecar?.fetch?.('/api/save-state', {
-      method: 'POST',
-      body: JSON.stringify({ lastOpenedPath: data.path }),
-    });
+    try {
+      if (window.sidecar?.fetch) {
+        window.sidecar.fetch('/api/save-state', {
+          method: 'POST',
+          body: JSON.stringify({ lastOpenedPath: data.path }),
+        });
+      }
+    } catch {}
   } catch (err) {
+    currentDocPath = null;
     if (notify) showToast(`Failed to load PDF: ${err.message}`);
   } finally {
     showLoading(false);
@@ -352,7 +406,18 @@ async function displayPdfData(uint8Array, name, path) {
     throw new Error('PDF.js library is not loaded');
   }
 
-  const doc = await pdfjsLib.getDocument({ data: uint8Array }).promise;
+  let doc;
+  try {
+    doc = await pdfjsLib.getDocument({ data: uint8Array }).promise;
+  } catch (workerErr) {
+    console.warn('PDF.js worker initialization failed, retrying without worker...', workerErr);
+    doc = await pdfjsLib.getDocument({
+      data: uint8Array,
+      disableWorker: true,
+      isEvalSupported: false,
+    }).promise;
+  }
+
   currentDoc = doc;
   currentDocName = name;
   currentDocPath = path;
@@ -636,18 +701,14 @@ async function loadWorkspacePdfs(explicitUris) {
   try {
     const uris = (Array.isArray(explicitUris) && explicitUris.length > 0)
       ? explicitUris
-      : (await window.sidecar?.getWorkspaceUris?.()) || [];
+      : (await safeGetWorkspaceUris(200));
 
-    if (!uris.length) {
-      if (workspaceSelect) workspaceSelect.hidden = true;
-      if (workspaceList) workspaceList.hidden = true;
-      return;
-    }
-
-    const res = await window.sidecar?.fetch?.('/api/workspace-pdfs', {
-      method: 'POST',
-      body: JSON.stringify({ workspaceUris: uris }),
-    });
+    const res = await (window.sidecar?.fetch
+      ? window.sidecar.fetch('/api/workspace-pdfs', {
+          method: 'POST',
+          body: JSON.stringify({ workspaceUris: uris }),
+        })
+      : fetch('/api/workspace-pdfs', { method: 'GET' }));
     const data = await res?.json?.();
     const pdfs = data?.pdfs || [];
 
